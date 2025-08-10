@@ -1,9 +1,9 @@
 "use client"
 
-import { createClient } from "@/lib/supabase/client"
-import { User, AuthError, Session } from "@supabase/supabase-js"
-import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
+import { createClient } from "@/lib/supabase/client";
+import { User, AuthError, Session } from "@supabase/supabase-js";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 
 interface Profile {
   id: string
