@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Mabaso Ecommerce Store",
+  title: "The Growth Club | Premium digital and physical products",
   description: "Premium digital and physical products",
 };
 

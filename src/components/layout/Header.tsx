@@ -14,7 +14,7 @@ export default function Header() {
           {/* Logo */}
           <div className="flex items-center">
             <Link href="/" className="text-2xl font-bold text-primary-600">
-              Store
+              TheGrowthClub
             </Link>
           </div>
 
