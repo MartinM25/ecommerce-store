@@ -82,8 +82,19 @@ export function useAuth(): AuthContextType {
       setProfile(data)
     } catch (error) {
       console.error("Error fetching profile:", error)
+      // Clear the ghost user when profile fetch fails
+      setProfile(null)
     }
   }
+
+  // 🔥 ADD THIS: Ghost user detection and cleanup
+  useEffect(() => {
+    // If we have a user but no profile and we're not loading, it's likely a ghost user
+    if (user && !profile && !loading) {
+      console.log("Ghost user detected, forcing sign out...")
+      signOut()
+    }
+  }, [user, profile, loading])
 
   const signIn = async (email: string, password: string) => {
     try {
