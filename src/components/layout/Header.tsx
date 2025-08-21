@@ -26,7 +26,7 @@ export default function Header() {
   })
 
   return (
-    <header className="bg-white shadow-sm border-b border-secondary-200">
+    <header className="bg-white border-b border-secondary-200">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Desktop Layout */}
         <div className="hidden md:flex justify-between items-center h-16">
@@ -49,7 +49,7 @@ export default function Header() {
               <input
                 type="text"
                 placeholder="Search products..."
-                className="block w-full pl-10 pr-3 py-2 border border-secondary-500 rounded-md leading-5 bg-secondary-500 text-white placeholder-white placeholder-opacity-80 focus:outline-none focus:placeholder-white focus:placeholder-opacity-60 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 focus:bg-secondary-600 text-sm"
+                className="block w-full pl-10 pr-3 py-2 border border-secondary-500 rounded-md leading-5 bg-secondary-500 placeholder-opacity-80 focus:outline-none focus:placeholder-white focus:placeholder-opacity-60 focus:ring-1 focus:ring-primary-500 focus:border-primary-500 focus:bg-secondary-600 text-sm"
               />
             </div>
           </div>
