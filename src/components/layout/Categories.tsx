@@ -35,7 +35,7 @@ export default function Categories() {
     <div className="w-full overflow-hidden">
       <NavigationMenu className="w-full max-w-none">
         <div className="overflow-x-auto scrollbar-hide">
-          <NavigationMenuList className="flex gap-1 min-w-max px-4 py-2">
+          <NavigationMenuList className="flex justify-start gap-1 px-4 py-2">
             {categories.map((category) => (
               <NavigationMenuItem key={category}>
                 <NavigationMenuLink
