@@ -1,9 +1,11 @@
-// app/admin/page.tsx - Main Admin Dashboard
-import React from 'react'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+"use client"
+
+import React, { useState, useEffect } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   ShoppingCart, 
   Package, 
@@ -18,68 +20,45 @@ import {
   Search,
   Download,
   MoreHorizontal
-} from "lucide-react"
-import { Input } from "@/components/ui/input"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+} from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 
-// Mock data based on your types
-const mockStats = {
-  totalRevenue: 324690,
-  totalOrders: 2340,
-  totalProducts: 1245,
-  activeUsers: 12458,
-  monthlyGrowth: {
-    revenue: 12.5,
-    orders: 8.2,
-    products: 3.1,
-    users: 15.3
-  }
+// Real data interfaces
+interface DashboardStats {
+  totalRevenue: number
+  totalOrders: number
+  totalProducts: number
+  activeUsers: number
 }
 
-const mockRecentOrders = [
-  {
-    id: 1,
-    order_number: "ORD-12847",
-    user_id: "user-1",
-    subtotal: 129.99,
-    total_amount: 129.99,
-    status: "shipped" as const,
-    payment_status: "paid" as const,
-    created_at: "2024-08-27T10:00:00Z",
-    order_items: [{ product_name: "Wireless Headphones", quantity: 1 }]
-  },
-  {
-    id: 2,
-    order_number: "ORD-12846",
-    user_id: "user-2",
-    subtotal: 299.99,
-    total_amount: 299.99,
-    status: "processing" as const,
-    payment_status: "paid" as const,
-    created_at: "2024-08-27T09:30:00Z",
-    order_items: [{ product_name: "Smart Watch", quantity: 1 }]
-  },
-  {
-    id: 3,
-    order_number: "ORD-12845",
-    user_id: "user-3",
-    subtotal: 89.99,
-    total_amount: 89.99,
-    status: "delivered" as const,
-    payment_status: "paid" as const,
-    created_at: "2024-08-26T15:20:00Z",
-    order_items: [{ product_name: "Running Shoes", quantity: 1 }]
+interface RecentOrder {
+  id: string
+  order_number: string
+  total_amount: number
+  status: string
+  payment_status: string
+  created_at: string
+  profiles: {
+    full_name: string
+    email: string
   }
-]
+  order_items: {
+    products: {
+      name: string
+    }
+    quantity: number
+  }[]
+}
 
-const mockTopProducts = [
-  { name: "Wireless Headphones", sales: 1240, revenue: 161160, growth: 12 },
-  { name: "Smart Watch", sales: 890, revenue: 266910, growth: 8 },
-  { name: "Running Shoes", sales: 720, revenue: 64728, growth: 15 },
-  { name: "Coffee Maker", sales: 560, revenue: 111944, growth: 5 },
-  { name: "Laptop Stand", sales: 440, revenue: 21956, growth: 22 }
-]
+interface TopProduct {
+  id: string
+  name: string
+  price: number
+  sales_count: number
+  total_revenue: number
+}
 
 type StatCardProps = {
   title: string;
@@ -87,10 +66,26 @@ type StatCardProps = {
   change: number;
   icon: React.ElementType;
   prefix?: string;
+  loading?: boolean;
 };
 
-function StatCard({ title, value, change, icon: Icon, prefix = "" }: StatCardProps) {
+function StatCard({ title, value, change, icon: Icon, prefix = "", loading = false }: StatCardProps) {
   const isPositive = change >= 0
+  
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+          <CardTitle className="text-sm font-medium">{title}</CardTitle>
+          <Icon className="h-4 w-4 text-muted-foreground" />
+        </CardHeader>
+        <CardContent>
+          <div className="text-2xl font-bold animate-pulse bg-gray-200 h-8 w-24 rounded"></div>
+          <div className="text-xs animate-pulse bg-gray-200 h-4 w-32 rounded mt-2"></div>
+        </CardContent>
+      </Card>
+    )
+  }
   
   return (
     <Card>
@@ -126,6 +121,124 @@ function getOrderStatusBadge(status: string) {
 }
 
 export default function AdminDashboard() {
+  const [stats, setStats] = useState<DashboardStats>({
+    totalRevenue: 0,
+    totalOrders: 0,
+    totalProducts: 0,
+    activeUsers: 0
+  })
+  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([])
+  const [topProducts, setTopProducts] = useState<TopProduct[]>([])
+  const [loading, setLoading] = useState(true)
+  const supabase = createClient()
+
+  useEffect(() => {
+    fetchDashboardData()
+  }, [])
+
+  const fetchDashboardData = async () => {
+    try {
+      setLoading(true)
+
+      // Fetch all data in parallel
+      const [
+        productsResponse,
+        ordersResponse,
+        usersResponse,
+        recentOrdersResponse,
+        topProductsResponse
+      ] = await Promise.all([
+        // Total products
+        supabase.from('products').select('id', { count: 'exact' }),
+        
+        // Total orders and revenue
+        supabase.from('orders').select('id, total_amount', { count: 'exact' }),
+        
+        // Total users
+        supabase.from('profiles').select('id', { count: 'exact' }),
+        
+        // Recent orders with user info and products
+        supabase
+          .from('orders')
+          .select(`
+            id,
+            order_number,
+            total_amount,
+            status,
+            payment_status,
+            created_at,
+            profiles!orders_user_id_fkey(full_name, email),
+            order_items(
+              quantity,
+              products(name)
+            )
+          `)
+          .order('created_at', { ascending: false })
+          .limit(10),
+
+        // Top products by sales (you'll need to create a view or function for this)
+        supabase
+          .from('products')
+          .select(`
+            id,
+            name,
+            price,
+            order_items(quantity)
+          `)
+          .limit(5)
+      ])
+
+      // Calculate stats
+      const totalProducts = productsResponse.count || 0
+      const totalOrders = ordersResponse.count || 0
+      const totalUsers = usersResponse.count || 0
+      
+      // Calculate total revenue
+      const totalRevenue = ordersResponse.data?.reduce(
+        (sum, order) => sum + (order.total_amount || 0), 0
+      ) || 0
+
+      // Process top products (calculate sales from order_items)
+      const processedTopProducts = topProductsResponse.data?.map(product => {
+        const salesCount = product.order_items?.reduce(
+          (sum, item) => sum + (item.quantity || 0), 0
+        ) || 0
+        
+        return {
+          id: product.id,
+          name: product.name,
+          price: product.price,
+          sales_count: salesCount,
+          total_revenue: salesCount * product.price
+        }
+      }).sort((a, b) => b.sales_count - a.sales_count) || []
+
+      setStats({
+        totalRevenue,
+        totalOrders,
+        totalProducts,
+        activeUsers: totalUsers
+      })
+
+      setRecentOrders(
+        (recentOrdersResponse.data || []).map((order: any) => ({
+          ...order,
+          profiles: Array.isArray(order.profiles) ? order.profiles[0] : order.profiles,
+          order_items: (order.order_items || []).map((item: any) => ({
+            ...item,
+            products: Array.isArray(item.products) ? item.products[0] : item.products,
+          })),
+        }))
+      )
+      setTopProducts(processedTopProducts)
+
+    } catch (error) {
+      console.error('Error fetching dashboard data:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
     <div className="flex-1 space-y-4 p-8 pt-6">
       <div className="flex items-center justify-between space-y-2">
@@ -146,28 +259,32 @@ export default function AdminDashboard() {
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Total Revenue"
-          value={mockStats.totalRevenue}
-          change={mockStats.monthlyGrowth.revenue}
+          value={stats.totalRevenue}
+          change={12.5} // You can calculate this based on previous month data
           icon={DollarSign}
           prefix="$"
+          loading={loading}
         />
         <StatCard
           title="Total Orders"
-          value={mockStats.totalOrders}
-          change={mockStats.monthlyGrowth.orders}
+          value={stats.totalOrders}
+          change={8.2}
           icon={ShoppingCart}
+          loading={loading}
         />
         <StatCard
           title="Total Products"
-          value={mockStats.totalProducts}
-          change={mockStats.monthlyGrowth.products}
+          value={stats.totalProducts}
+          change={3.1}
           icon={Package}
+          loading={loading}
         />
         <StatCard
           title="Active Users"
-          value={mockStats.activeUsers}
-          change={mockStats.monthlyGrowth.users}
+          value={stats.activeUsers}
+          change={15.3}
           icon={Users}
+          loading={loading}
         />
       </div>
 
@@ -189,26 +306,39 @@ export default function AdminDashboard() {
                 <CardDescription>Latest orders from your store</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {mockRecentOrders.map((order) => (
-                    <div key={order.id} className="flex items-center justify-between space-x-4">
-                      <div className="flex items-center space-x-4">
-                        <div>
-                          <p className="text-sm font-medium leading-none">{order.order_number}</p>
-                          <p className="text-sm text-muted-foreground">
-                            {order.order_items[0]?.product_name}
-                          </p>
+                {loading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3, 4, 5].map(i => (
+                      <div key={i} className="animate-pulse">
+                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                      </div>
+                    ))}
+                  </div>
+                ) : recentOrders.length > 0 ? (
+                  <div className="space-y-4">
+                    {recentOrders.slice(0, 5).map((order) => (
+                      <div key={order.id} className="flex items-center justify-between space-x-4">
+                        <div className="flex items-center space-x-4">
+                          <div>
+                            <p className="text-sm font-medium leading-none">{order.order_number}</p>
+                            <p className="text-sm text-muted-foreground">
+                              {order.profiles?.full_name || 'Unknown Customer'} • {order.order_items?.[0]?.products?.name || 'No items'}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="text-right">
+                            <p className="text-sm font-medium">${order.total_amount}</p>
+                            {getOrderStatusBadge(order.status)}
+                          </div>
                         </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <div className="text-right">
-                          <p className="text-sm font-medium">${order.total_amount}</p>
-                          {getOrderStatusBadge(order.status)}
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No orders yet</p>
+                )}
               </CardContent>
             </Card>
 
@@ -216,23 +346,36 @@ export default function AdminDashboard() {
             <Card className="col-span-3">
               <CardHeader>
                 <CardTitle>Top Products</CardTitle>
-                <CardDescription>Best performing products this month</CardDescription>
+                <CardDescription>Best performing products</CardDescription>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {mockTopProducts.slice(0, 5).map((product, index) => (
-                    <div key={index} className="flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-medium">{product.name}</p>
-                        <p className="text-xs text-muted-foreground">{product.sales} sales</p>
+                {loading ? (
+                  <div className="space-y-4">
+                    {[1, 2, 3, 4, 5].map(i => (
+                      <div key={i} className="animate-pulse">
+                        <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-sm font-medium">${product.revenue.toLocaleString()}</p>
-                        <p className="text-xs text-green-600">+{product.growth}%</p>
+                    ))}
+                  </div>
+                ) : topProducts.length > 0 ? (
+                  <div className="space-y-4">
+                    {topProducts.slice(0, 5).map((product) => (
+                      <div key={product.id} className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium">{product.name}</p>
+                          <p className="text-xs text-muted-foreground">{product.sales_count} sales</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-sm font-medium">${product.total_revenue.toLocaleString()}</p>
+                          <p className="text-xs text-green-600">Active</p>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-muted-foreground">No product data available</p>
+                )}
               </CardContent>
             </Card>
           </div>
@@ -273,11 +416,24 @@ export default function AdminDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockRecentOrders.map((order) => (
+                  {loading ? (
+                    [...Array(5)].map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-20"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-24"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-32"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-16"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-20"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-16"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-20"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-8"></div></TableCell>
+                      </TableRow>
+                    ))
+                  ) : recentOrders.map((order) => (
                     <TableRow key={order.id}>
                       <TableCell className="font-medium">{order.order_number}</TableCell>
-                      <TableCell>Customer #{order.user_id}</TableCell>
-                      <TableCell>{order.order_items[0]?.product_name}</TableCell>
+                      <TableCell>{order.profiles?.full_name || 'Unknown'}</TableCell>
+                      <TableCell>{order.order_items?.[0]?.products?.name || 'No items'}</TableCell>
                       <TableCell>${order.total_amount}</TableCell>
                       <TableCell>{getOrderStatusBadge(order.status)}</TableCell>
                       <TableCell>{getOrderStatusBadge(order.payment_status)}</TableCell>
@@ -326,19 +482,27 @@ export default function AdminDashboard() {
                     <TableHead>Product Name</TableHead>
                     <TableHead>Sales Count</TableHead>
                     <TableHead>Revenue</TableHead>
-                    <TableHead>Growth</TableHead>
+                    <TableHead>Price</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {mockTopProducts.map((product, index) => (
-                    <TableRow key={index}>
+                  {loading ? (
+                    [...Array(5)].map((_, i) => (
+                      <TableRow key={i}>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-32"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-16"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-20"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-16"></div></TableCell>
+                        <TableCell><div className="h-4 bg-gray-200 rounded animate-pulse w-8"></div></TableCell>
+                      </TableRow>
+                    ))
+                  ) : topProducts.map((product) => (
+                    <TableRow key={product.id}>
                       <TableCell className="font-medium">{product.name}</TableCell>
-                      <TableCell>{product.sales}</TableCell>
-                      <TableCell>${product.revenue.toLocaleString()}</TableCell>
-                      <TableCell>
-                        <span className="text-green-600">+{product.growth}%</span>
-                      </TableCell>
+                      <TableCell>{product.sales_count}</TableCell>
+                      <TableCell>${product.total_revenue.toLocaleString()}</TableCell>
+                      <TableCell>${product.price}</TableCell>
                       <TableCell className="text-right">
                         <DropdownMenu>
                           <DropdownMenuTrigger asChild>
