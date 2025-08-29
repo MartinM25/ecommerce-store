@@ -1,10 +1,11 @@
 "use client"
 
-import React, { useState } from "react";
+import React, { useEffect } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/useAuth";
+import { usePathname, useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
@@ -123,6 +124,12 @@ function Sidebar({ className = "" }: { className?: string }) {
 }
 
 function AdminHeader() {
+  const { profile, signOut } = useAuth()
+
+  const handleSignOut = async () => {
+    await signOut()
+  }
+
   return (
     <header className="sticky top-0 z-40 border-b bg-background">
       <div className="container flex h-16 items-center space-x-4 sm:justify-between sm:space-x-0">
@@ -182,7 +189,9 @@ function AdminHeader() {
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              <DropdownMenuLabel>Admin Account</DropdownMenuLabel>
+              <DropdownMenuLabel>
+                {profile?.full_name || 'Admin Account'}
+              </DropdownMenuLabel>
               <DropdownMenuSeparator />
               <DropdownMenuItem>
                 <User className="mr-2 h-4 w-4" />
@@ -193,7 +202,10 @@ function AdminHeader() {
                 Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem className="text-red-600">
+              <DropdownMenuItem 
+                className="text-red-600"
+                onClick={handleSignOut}
+              >
                 <LogOut className="mr-2 h-4 w-4" />
                 Log out
               </DropdownMenuItem>
@@ -205,18 +217,50 @@ function AdminHeader() {
   )
 }
 
+// Admin Protection Component
+function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
+  const { user, profile, loading } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!loading) {
+      if (!user) {
+        router.push("/login?redirect=/admin")
+      } else if (!profile?.is_admin) {
+        router.push("/?error=unauthorized")
+      }
+    }
+  }, [user, profile, loading, router])
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
+      </div>
+    )
+  }
+
+  if (!user || !profile?.is_admin) {
+    return null
+  }
+
+  return <>{children}</>
+}
+
 export default function AdminLayout({ children }: AdminLayoutProps) {
   return (
-    <div className="min-h-screen bg-background">
-      <AdminHeader />
-      <div className="container mx-auto flex">
-        <aside className="hidden w-64 shrink-0 border-r md:block">
-          <Sidebar />
-        </aside>
-        <main className="flex-1">
-          {children}
-        </main>
+    <AdminProtectedRoute>
+      <div className="min-h-screen bg-background">
+        <AdminHeader />
+        <div className="container mx-auto flex">
+          <aside className="hidden w-64 shrink-0 border-r md:block">
+            <Sidebar />
+          </aside>
+          <main className="flex-1">
+            {children}
+          </main>
+        </div>
       </div>
-    </div>
+    </AdminProtectedRoute>
   )
 }
