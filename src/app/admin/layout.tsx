@@ -1,9 +1,10 @@
 "use client"
 
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/hooks/useAuth";
 import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
@@ -32,7 +33,15 @@ interface AdminLayoutProps {
   children: React.ReactNode
 }
 
-const navigation = [
+interface NavigationCounts {
+  pendingOrders: number
+  totalProducts: number
+  totalCustomers: number
+  pendingPayments: number
+}
+
+// Navigation structure - will be updated with real counts
+const getNavigation = (counts: NavigationCounts) => [
   {
     name: 'Dashboard',
     href: '/admin',
@@ -42,12 +51,13 @@ const navigation = [
     name: 'Orders',
     href: '/admin/orders',
     icon: ShoppingCart,
-    badge: '12'
+    badge: counts.pendingOrders > 0 ? counts.pendingOrders.toString() : undefined
   },
   {
     name: 'Products',
     href: '/admin/products',
     icon: Package,
+    badge: counts.totalProducts > 0 ? counts.totalProducts.toString() : undefined
   },
   {
     name: 'Categories',
@@ -58,6 +68,7 @@ const navigation = [
     name: 'Customers',
     href: '/admin/customers',
     icon: Users,
+    badge: counts.totalCustomers > 0 ? counts.totalCustomers.toString() : undefined
   },
   {
     name: 'Analytics',
@@ -73,6 +84,7 @@ const navigation = [
     name: 'Payments',
     href: '/admin/payments',
     icon: CreditCard,
+    badge: counts.pendingPayments > 0 ? counts.pendingPayments.toString() : undefined
   },
   {
     name: 'Shipping',
@@ -86,8 +98,9 @@ const navigation = [
   },
 ]
 
-function Sidebar({ className = "" }: { className?: string }) {
+function Sidebar({ className = "", navigationCounts }: { className?: string, navigationCounts: NavigationCounts }) {
   const pathname = usePathname()
+  const navigation = getNavigation(navigationCounts)
 
   return (
     <div className={`pb-12 ${className}`}>
@@ -123,7 +136,7 @@ function Sidebar({ className = "" }: { className?: string }) {
   )
 }
 
-function AdminHeader() {
+function AdminHeader({ notificationCount }: { notificationCount: number }) {
   const { profile, signOut } = useAuth()
 
   const handleSignOut = async () => {
@@ -147,7 +160,37 @@ function AdminHeader() {
                 </Button>
               </SheetTrigger>
               <SheetContent side="left" className="flex flex-col">
-                <Sidebar />
+                <div className="pb-12">
+                  <div className="space-y-4 py-4">
+                    <div className="px-3 py-2">
+                      <div className="mb-2 px-4 text-lg font-semibold tracking-tight">
+                        Admin Panel
+                      </div>
+                      <div className="space-y-1">
+                        {getNavigation({
+                          pendingOrders: 0,
+                          totalProducts: 0,
+                          totalCustomers: 0,
+                          pendingPayments: 0
+                        }).map((item) => {
+                          const pathname = usePathname()
+                          const isActive = pathname === item.href
+                          return (
+                            <Link key={item.href} href={item.href}>
+                              <Button
+                                variant={isActive ? "secondary" : "ghost"}
+                                className="w-full justify-start"
+                              >
+                                <item.icon className="mr-2 h-4 w-4" />
+                                {item.name}
+                              </Button>
+                            </Link>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </SheetContent>
             </Sheet>
             <div className="hidden md:flex">
@@ -175,9 +218,11 @@ function AdminHeader() {
           
           <Button variant="outline" size="icon" className="relative">
             <Bell className="h-4 w-4" />
-            <Badge className="absolute -right-1 -top-1 h-5 w-5 items-center justify-center rounded-full p-0 text-xs">
-              3
-            </Badge>
+            {notificationCount > 0 && (
+              <Badge className="absolute -right-1 -top-1 h-5 w-5 items-center justify-center rounded-full p-0 text-xs">
+                {notificationCount > 99 ? '99+' : notificationCount}
+              </Badge>
+            )}
             <span className="sr-only">Notifications</span>
           </Button>
 
@@ -248,13 +293,87 @@ function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
 }
 
 export default function AdminLayout({ children }: AdminLayoutProps) {
+  const [navigationCounts, setNavigationCounts] = useState<NavigationCounts>({
+    pendingOrders: 0,
+    totalProducts: 0,
+    totalCustomers: 0,
+    pendingPayments: 0
+  })
+  const [notificationCount, setNotificationCount] = useState(0)
+  const supabase = createClient()
+
+  useEffect(() => {
+    fetchNavigationCounts()
+  }, [])
+
+  const fetchNavigationCounts = async () => {
+    try {
+      // Fetch counts for navigation badges
+      const [
+        pendingOrdersResponse,
+        productsResponse,
+        customersResponse,
+        pendingPaymentsResponse
+      ] = await Promise.all([
+        // Pending orders count
+        supabase
+          .from('orders')
+          .select('id', { count: 'exact' })
+          .in('status', ['pending', 'processing']),
+        
+        // Total products count
+        supabase
+          .from('products')
+          .select('id', { count: 'exact' }),
+        
+        // Total customers count
+        supabase
+          .from('profiles')
+          .select('id', { count: 'exact' })
+          .eq('is_admin', false),
+        
+        // Pending payments count
+        supabase
+          .from('orders')
+          .select('id', { count: 'exact' })
+          .eq('payment_status', 'pending')
+      ])
+
+      const pendingOrders = pendingOrdersResponse.count || 0
+      const totalProducts = productsResponse.count || 0
+      const totalCustomers = customersResponse.count || 0
+      const pendingPayments = pendingPaymentsResponse.count || 0
+
+      setNavigationCounts({
+        pendingOrders,
+        totalProducts,
+        totalCustomers,
+        pendingPayments
+      })
+
+      // Calculate total notifications (pending orders + pending payments + low stock items)
+      const totalNotifications = pendingOrders + pendingPayments
+
+      // You can add low stock products to notifications
+      const { count: lowStockCount } = await supabase
+        .from('products')
+        .select('id', { count: 'exact' })
+        .lte('stock_quantity', 10)
+
+      setNotificationCount(totalNotifications + (lowStockCount || 0))
+
+    } catch (error) {
+      console.error('Error fetching navigation counts:', error)
+    }
+  }
+
   return (
     <AdminProtectedRoute>
       <div className="min-h-screen bg-background">
-        <AdminHeader />
+        <AdminHeader notificationCount={notificationCount} />
         <div className="container mx-auto flex">
           <aside className="hidden w-64 shrink-0 border-r md:block">
-            <Sidebar />
+            <Sidebar navigationCounts={navigationCounts} />
           </aside>
           <main className="flex-1">
             {children}
