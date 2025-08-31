@@ -67,17 +67,35 @@ type StatCardProps = {
   icon: React.ElementType;
   prefix?: string;
   loading?: boolean;
+  backgroundColor?: string;
+  fontColor?: string;
+  iconColor?: string;
 };
 
-function StatCard({ title, value, change, icon: Icon, prefix = "", loading = false }: StatCardProps) {
+function StatCard({ 
+  title, 
+  value, 
+  change, 
+  icon: Icon, 
+  prefix = "", 
+  loading = false,
+  backgroundColor = "",
+  fontColor = "",
+  iconColor = ""
+}: StatCardProps) {
   const isPositive = change >= 0
+
+  // Create style objects for custom colors
+  const cardStyle = backgroundColor ? { backgroundColor } : {}
+  const textStyle = fontColor ? { color: fontColor } : {}
+  const iconStyle = iconColor ? { color: iconColor } : (fontColor ? { color: fontColor } : {})
   
   if (loading) {
     return (
-      <Card>
+      <Card className="border-0" style={cardStyle}>
         <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-          <CardTitle className="text-sm font-medium">{title}</CardTitle>
-          <Icon className="h-4 w-4 text-muted-foreground" />
+          <CardTitle className="text-sm font-medium" style={textStyle}>{title}</CardTitle>
+          <Icon className="h-4 w-4 text-muted-foreground" style={iconStyle} />
         </CardHeader>
         <CardContent>
           <div className="text-2xl font-bold animate-pulse bg-gray-200 h-8 w-24 rounded"></div>
@@ -88,16 +106,16 @@ function StatCard({ title, value, change, icon: Icon, prefix = "", loading = fal
   }
   
   return (
-    <Card>
+    <Card className="border-0" style={cardStyle}>
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium">{title}</CardTitle>
-        <Icon className="h-4 w-4 text-muted-foreground" />
+        <CardTitle style={textStyle} className="text-sm font-medium">{title}</CardTitle>
+        <Icon style={iconStyle} className="h-4 w-4 text-muted-foreground" />
       </CardHeader>
       <CardContent>
-        <div className="text-2xl font-bold">
+        <div style={textStyle} className="text-2xl font-bold">
           {prefix}{typeof value === 'number' ? value.toLocaleString() : value}
         </div>
-        <p className={`text-xs ${isPositive ? 'text-green-600' : 'text-red-600'} flex items-center gap-1`}>
+        <p className={`text-xs ${isPositive ? 'text-green-600' : 'text-red-600'} flex items-center gap-1 pt-1.5`}>
           <TrendingUp className="h-3 w-3" />
           {isPositive ? '+' : ''}{change}% from last month
         </p>
@@ -264,13 +282,9 @@ export default function AdminDashboard() {
           icon={DollarSign}
           prefix="$"
           loading={loading}
-        />
-        <StatCard
-          title="Total Orders"
-          value={stats.totalOrders}
-          change={8.2}
-          icon={ShoppingCart}
-          loading={loading}
+          backgroundColor="#D6E9FF"
+          fontColor="#4A6CF7"
+          iconColor="#4A6CF7"
         />
         <StatCard
           title="Total Products"
@@ -278,6 +292,19 @@ export default function AdminDashboard() {
           change={3.1}
           icon={Package}
           loading={loading}
+          backgroundColor="#FFEFC2"
+          fontColor="#F6A623"
+          iconColor="#F6A623"
+        />
+        <StatCard
+          title="Total Orders"
+          value={stats.totalOrders}
+          change={8.2}
+          icon={ShoppingCart}
+          loading={loading}
+          backgroundColor="#D6F5DB"
+          fontColor="#2FAE66"
+          iconColor="#2FAE66"
         />
         <StatCard
           title="Active Users"
@@ -285,6 +312,9 @@ export default function AdminDashboard() {
           change={15.3}
           icon={Users}
           loading={loading}
+          backgroundColor="#ECD6FF"
+          fontColor="#9B51E0"
+          iconColor="#9B51E0"
         />
       </div>
 
