@@ -10,7 +10,9 @@ import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { 
+import { useSessionManager } from "@/hooks/useSessionManager";
+import { SessionTimeoutWarning } from "@/components/layout/SessionTimeoutWarning";
+import {
   Menu,
   Search,
   Bell,
@@ -26,7 +28,8 @@ import {
   CreditCard,
   Truck,
   Shield,
-  Home
+  Home,
+  Clock
 } from "lucide-react";
 
 interface AdminLayoutProps {
@@ -40,7 +43,6 @@ interface NavigationCounts {
   pendingPayments: number
 }
 
-// Navigation structure - will be updated with real counts
 const getNavigation = (counts: NavigationCounts) => [
   {
     name: 'Dashboard',
@@ -136,7 +138,10 @@ function Sidebar({ className = "", navigationCounts }: { className?: string, nav
   )
 }
 
-function AdminHeader({ notificationCount }: { notificationCount: number }) {
+function AdminHeader({ notificationCount, sessionTimeRemaining }: {
+  notificationCount: number
+  sessionTimeRemaining: string
+}) {
   const { profile, signOut } = useAuth()
 
   const handleSignOut = async () => {
@@ -203,7 +208,7 @@ function AdminHeader({ notificationCount }: { notificationCount: number }) {
             </div>
           </div>
         </div>
-        
+
         <div className="flex flex-1 items-center justify-end space-x-4">
           <div className="w-full flex-1 md:w-auto md:flex-none">
             <div className="relative">
@@ -215,7 +220,13 @@ function AdminHeader({ notificationCount }: { notificationCount: number }) {
               />
             </div>
           </div>
-          
+
+          {/* Session Timer */}
+          <div className="hidden sm:flex items-center text-xs text-muted-foreground">
+            <Clock className="h-3 w-3 mr-1" />
+            {sessionTimeRemaining}
+          </div>
+
           <Button variant="outline" size="icon" className="relative">
             <Bell className="h-4 w-4" />
             {notificationCount > 0 && (
@@ -247,7 +258,7 @@ function AdminHeader({ notificationCount }: { notificationCount: number }) {
                 Settings
               </DropdownMenuItem>
               <DropdownMenuSeparator />
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 className="text-red-600"
                 onClick={handleSignOut}
               >
@@ -266,13 +277,41 @@ function AdminHeader({ notificationCount }: { notificationCount: number }) {
 function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, profile, loading } = useAuth()
   const router = useRouter()
+  const [protectionTimeout, setProtectionTimeout] = useState<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
+    // Clear existing timeout
+    if (protectionTimeout) {
+      clearTimeout(protectionTimeout)
+    }
+
+    // Set a maximum loading time of 15 seconds
+    const timeout = setTimeout(() => {
+      if (loading) {
+        console.warn('Admin protection timed out, redirecting to login')
+        router.push('/login?reason=protection-timeout')
+      }
+    }, 15000)
+
+    setProtectionTimeout(timeout)
+
+    // Handle protection logic
     if (!loading) {
+      if (protectionTimeout) {
+        clearTimeout(protectionTimeout)
+        setProtectionTimeout(null)
+      }
+
       if (!user) {
         router.push("/login?redirect=/admin")
       } else if (!profile?.is_admin) {
         router.push("/?error=unauthorized")
+      }
+    }
+
+    return () => {
+      if (protectionTimeout) {
+        clearTimeout(protectionTimeout)
       }
     }
   }, [user, profile, loading, router])
@@ -280,7 +319,15 @@ function AdminProtectedRoute({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600"></div>
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-primary-600 mx-auto"></div>
+          <p className="mt-4 text-sm text-muted-foreground">
+            Verifying admin access...
+          </p>
+          <p className="mt-2 text-xs text-muted-foreground">
+            This shouldn't take more than a few seconds
+          </p>
+        </div>
       </div>
     )
   }
@@ -302,8 +349,24 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   const [notificationCount, setNotificationCount] = useState(0)
   const supabase = createClient()
 
+  // Session management with 30-minute timeout, 5-minute warning
+  const {
+    showWarning,
+    timeRemainingFormatted,
+    extendSession,
+    forceLogout
+  } = useSessionManager({
+    timeoutMinutes: 30,
+    warningMinutes: 5,
+    checkIntervalSeconds: 30
+  })
+
   useEffect(() => {
     fetchNavigationCounts()
+
+    // Refresh counts every 5 minutes
+    const interval = setInterval(fetchNavigationCounts, 5 * 60 * 1000)
+    return () => clearInterval(interval)
   }, [])
 
   const fetchNavigationCounts = async () => {
@@ -320,18 +383,18 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           .from('orders')
           .select('id', { count: 'exact' })
           .in('status', ['pending', 'processing']),
-        
+
         // Total products count
         supabase
           .from('products')
           .select('id', { count: 'exact' }),
-        
+
         // Total customers count
         supabase
           .from('profiles')
           .select('id', { count: 'exact' })
           .eq('is_admin', false),
-        
+
         // Pending payments count
         supabase
           .from('orders')
@@ -370,7 +433,10 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
   return (
     <AdminProtectedRoute>
       <div className="min-h-screen bg-background">
-        <AdminHeader notificationCount={notificationCount} />
+        <AdminHeader 
+          notificationCount={notificationCount} 
+          sessionTimeRemaining={timeRemainingFormatted}
+        />
         <div className="container mx-auto flex">
           <aside className="hidden w-64 shrink-0 border-r md:block">
             <Sidebar navigationCounts={navigationCounts} />
@@ -380,6 +446,14 @@ export default function AdminLayout({ children }: AdminLayoutProps) {
           </main>
         </div>
       </div>
+
+      {/* Session Timeout Warning Modal */}
+      <SessionTimeoutWarning
+        isOpen={showWarning}
+        timeRemaining={300} // 5 minutes in seconds
+        onExtendSession={extendSession}
+        onLogout={forceLogout}
+      />
     </AdminProtectedRoute>
   )
 }
